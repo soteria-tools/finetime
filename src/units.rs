@@ -7,6 +7,20 @@ use i256::{I256, U256};
 
 use crate::{Fraction, TryMul};
 
+/// Trait representing the fact that a unit can be converted into another unit, with a known ratio.
+/// We use this trait's associated constant `RATIO` to compute the conversion factor between two units
+/// at const-eval, ensuring the conversion ratio is known and cannot accidentally overflow at runtime.
+pub trait Convertible<From>
+where
+    From: ?Sized,
+{
+    const RATIO: Fraction;
+}
+
+impl<T> Convertible<T> for T {
+    const RATIO: Fraction = Fraction::new(1, 1);
+}
+
 /// Trait representing a lossless conversion from one unit to another. Note that the underlying
 /// value representation stays the same. For floating point representations, floating point
 /// rounding is permitted.
@@ -19,34 +33,6 @@ where
     /// rounding error. Floating point errors are permitted.
     fn convert(self) -> Self;
 }
-
-macro_rules! impl_identity_conversion {
-    ($repr:ty) => {
-        impl<T> ConvertUnit<T, T> for $repr
-        where
-            T: UnitRatio,
-        {
-            fn convert(self) -> Self {
-                self
-            }
-        }
-    };
-}
-
-impl_identity_conversion!(u8);
-impl_identity_conversion!(u16);
-impl_identity_conversion!(u32);
-impl_identity_conversion!(u64);
-impl_identity_conversion!(u128);
-#[cfg(feature = "i256")]
-impl_identity_conversion!(U256);
-impl_identity_conversion!(i8);
-impl_identity_conversion!(i16);
-impl_identity_conversion!(i32);
-impl_identity_conversion!(i64);
-impl_identity_conversion!(i128);
-#[cfg(feature = "i256")]
-impl_identity_conversion!(I256);
 
 impl<From, Into> ConvertUnit<From, Into> for f64
 where
@@ -115,51 +101,70 @@ macro_rules! valid_integer_conversions {
         $from:ty => $( $to:ty ),+ $(,)?
     ) => {
         $(
-            valid_integer_conversion!(u8, $from, $to);
-            valid_integer_conversion!(u16, $from, $to);
-            valid_integer_conversion!(u32, $from, $to);
-            valid_integer_conversion!(u64, $from, $to);
-            valid_integer_conversion!(u128, $from, $to);
-            valid_integer_conversion!(i8, $from, $to);
-            valid_integer_conversion!(i16, $from, $to);
-            valid_integer_conversion!(i32, $from, $to);
-            valid_integer_conversion!(i64, $from, $to);
-            valid_integer_conversion!(i128, $from, $to);
-
-            #[cfg(feature = "i256")]
-            impl ConvertUnit<$from, $to> for U256 {
-                fn convert(self) -> Self {
-                    let combined_ratio = <$from>::FRACTION.divide_by(&<$to>::FRACTION);
-                    // For any conversion ratio that is lossless, this division will not truncate.
-                    let factor = combined_ratio.numerator() / combined_ratio.denominator();
-                    self * Self::from(factor)
-                }
+            impl Convertible<$from> for $to {
+                const RATIO: Fraction = <$from>::FRACTION.divide_by(&<$to>::FRACTION);
             }
 
-            #[cfg(feature = "i256")]
-            impl ConvertUnit<$from, $to> for I256 {
-                fn convert(self) -> Self {
-                    let combined_ratio = <$from>::FRACTION.divide_by(&<$to>::FRACTION);
-                    // For any conversion ratio that is lossless, this division will not truncate.
-                    let factor = combined_ratio.numerator() / combined_ratio.denominator();
-                    self * Self::from(factor)
+
+            #[cfg(test)]
+            paste::paste! {
+                /// Proves that the conversion from `$from` to `$to` for the given representation
+                /// cannot panic, notably when calculating the combined ratio (in which case the
+                /// conversion `$from` => `$to` can never be valid).
+                #[allow(non_snake_case)]
+                #[test]
+                fn [<check_conversion_valid_ $to _from_ $from >]() {
+                    let _ = <$to as Convertible<$from>>::RATIO;
                 }
             }
         )+
     };
 }
 
-macro_rules! valid_integer_conversion {
-    ($repr:ty, $from:ty, $into:ty) => {
-        impl ConvertUnit<$from, $into> for $repr {
-            fn convert(self) -> Self {
-                let combined_ratio = <$from>::FRACTION.divide_by(&<$into>::FRACTION);
-                // For any conversion ratio that is lossless, this division will not truncate.
-                let factor = combined_ratio.numerator() / combined_ratio.denominator();
-                self * (factor as Self)
+macro_rules! make_integer_conversions {
+    ( $( $repr:ty ),+ ) => {
+        $(
+            impl<From, To> ConvertUnit<From, To> for $repr
+            where
+                To: Convertible<From> + ?Sized,
+            {
+                fn convert(self) -> Self {
+                    let combined_ratio = <To as Convertible<From>>::RATIO;
+                    // For any conversion ratio that is lossless, this division will not truncate.
+                    let factor = combined_ratio.numerator() / combined_ratio.denominator();
+                    self * (factor as Self)
+                }
             }
-        }
+        )+
     };
+}
+
+make_integer_conversions!(u8, u16, u32, u64, u128, i8, i16, i32, i64, i128);
+
+#[cfg(feature = "i256")]
+impl<From, To> ConvertUnit<From, To> for U256
+where
+    To: Convertible<From> + ?Sized,
+{
+    fn convert(self) -> Self {
+        let combined_ratio = <To as Convertible<From>>::RATIO;
+        // For any conversion ratio that is lossless, this division will not truncate.
+        let factor = combined_ratio.numerator() / combined_ratio.denominator();
+        self * Self::from(factor)
+    }
+}
+
+#[cfg(feature = "i256")]
+impl<From, To> ConvertUnit<From, To> for I256
+where
+    To: Convertible<From> + ?Sized,
+{
+    fn convert(self) -> Self {
+        let combined_ratio = <To as Convertible<From>>::RATIO;
+        // For any conversion ratio that is lossless, this division will not truncate.
+        let factor = combined_ratio.numerator() / combined_ratio.denominator();
+        self * Self::from(factor)
+    }
 }
 
 // SI unit qualifiers
