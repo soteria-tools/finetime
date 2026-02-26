@@ -17,10 +17,6 @@ where
     const RATIO: Fraction;
 }
 
-impl<T> Convertible<T> for T {
-    const RATIO: Fraction = Fraction::new(1, 1);
-}
-
 /// Trait representing a lossless conversion from one unit to another. Note that the underlying
 /// value representation stays the same. For floating point representations, floating point
 /// rounding is permitted.
@@ -32,28 +28,6 @@ where
     /// Converts from one unit into another. Shall only be used for exact conversions, without
     /// rounding error. Floating point errors are permitted.
     fn convert(self) -> Self;
-}
-
-impl<From, Into> ConvertUnit<From, Into> for f64
-where
-    From: UnitRatio + ?Sized,
-    Into: UnitRatio + ?Sized,
-{
-    fn convert(self) -> Self {
-        let combined_ratio = From::FRACTION.divide_by(&Into::FRACTION);
-        combined_ratio * self
-    }
-}
-
-impl<From, Into> ConvertUnit<From, Into> for f32
-where
-    From: UnitRatio + ?Sized,
-    Into: UnitRatio + ?Sized,
-{
-    fn convert(self) -> Self {
-        let combined_ratio = From::FRACTION.divide_by(&Into::FRACTION);
-        combined_ratio * self
-    }
 }
 
 /// Trait representing a fallible conversion from one unit to another, failing if the requested
@@ -96,16 +70,19 @@ impl<const NUMERATOR: u128, const DENOMINATOR: u128> UnitRatio
     const FRACTION: Fraction = Fraction::new(NUMERATOR, DENOMINATOR);
 }
 
+impl<From, Into> Convertible<From> for Into
+where
+    From: UnitRatio + ?Sized,
+    Into: UnitRatio + ?Sized,
+{
+    const RATIO: Fraction = From::FRACTION.divide_by(&Into::FRACTION);
+}
+
 macro_rules! valid_integer_conversions {
     (
         $from:ty => $( $to:ty ),+ $(,)?
     ) => {
         $(
-            impl Convertible<$from> for $to {
-                const RATIO: Fraction = <$from>::FRACTION.divide_by(&<$to>::FRACTION);
-            }
-
-
             #[cfg(test)]
             paste::paste! {
                 /// Proves that the conversion from `$from` to `$to` for the given representation
@@ -140,6 +117,24 @@ macro_rules! make_integer_conversions {
 }
 
 make_integer_conversions!(u8, u16, u32, u64, u128, i8, i16, i32, i64, i128);
+
+impl<From, To> ConvertUnit<From, To> for f64
+where
+    To: Convertible<From> + ?Sized,
+{
+    fn convert(self) -> Self {
+        <To as Convertible<From>>::RATIO * self
+    }
+}
+
+impl<From, To> ConvertUnit<From, To> for f32
+where
+    To: Convertible<From> + ?Sized,
+{
+    fn convert(self) -> Self {
+        <To as Convertible<From>>::RATIO * self
+    }
+}
 
 #[cfg(feature = "i256")]
 impl<From, To> ConvertUnit<From, To> for U256
