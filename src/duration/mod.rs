@@ -530,8 +530,8 @@ mod proof_harness {
                 #[kani::proof]
                 fn [<roundtrip_ $to:lower _ $repr:lower>]() {
                     let a: Seconds<$repr> = kani::any();
-                    let numerator = <$repr as num::FromPrimitive>::from_i128(<$to>::RATIO.numerator());
-                    let denominator = <$repr as num::FromPrimitive>::from_i128(<$to>::RATIO.denominator());
+                    let numerator = <$repr as num_traits::FromPrimitive>::from_i128(<$to>::RATIO.numerator());
+                    let denominator = <$repr as num_traits::FromPrimitive>::from_i128(<$to>::RATIO.denominator());
 
                     // We only check this conversion if the numerator and denominator can actually
                     // be represented by the target representation. It doesn't make sense, for
@@ -578,8 +578,8 @@ mod proof_harness {
                 #[kani::proof]
                 fn [<rounding_ $to:lower _ $repr:lower>]() {
                     let a: Seconds<$repr> = kani::any();
-                    let numerator = <$repr as num::FromPrimitive>::from_i128(<$to>::RATIO.numerator());
-                    let denominator = <$repr as num::FromPrimitive>::from_i128(<$to>::RATIO.denominator());
+                    let numerator = <$repr as num_traits::FromPrimitive>::from_i128(<$to>::RATIO.numerator());
+                    let denominator = <$repr as num_traits::FromPrimitive>::from_i128(<$to>::RATIO.denominator());
 
                     // We only check this conversion if the numerator and denominator can actually
                     // be represented by the target representation. It doesn't make sense, for
